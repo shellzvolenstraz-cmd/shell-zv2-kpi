@@ -23,7 +23,6 @@ def parse_number(val):
 
 def load_html_tables(uploaded_file):
     raw_bytes = uploaded_file.read()
-    # Pokus o načítanie s UTF-16, v prípade neúspechu UTF-8 alebo cp1250
     for enc in ['utf-16', 'utf-8', 'cp1250', 'iso-8859-2']:
         try:
             bytes_io = io.BytesIO(raw_bytes)
@@ -32,7 +31,7 @@ def load_html_tables(uploaded_file):
                 return pd.concat(dfs, ignore_index=True)
         except Exception:
             continue
-    raise ValueError("Nepodarilo sa dešifrovať kódovanie súboru.")
+    raise ValueError("Nepodarilo sa dešifrovať kódovanie súboru alebo prečítať tabuľky.")
 
 if item_file and pay_file:
     try:
@@ -41,10 +40,11 @@ if item_file and pay_file:
 
         st.success("✅ Súbory z Radiantu boli úspešne načítané!")
 
-        # Vyhľadávanie hodnôt v položkovom reporte
+        # Bezpečné vyhľadávanie v položkovom reporte
         def find_item_qty_or_amount(keyword):
             for idx, row in item_df.iterrows():
-                row_str = " ".join(row.astype(str))
+                # Prevedieme každú bunku bezpečne na reťazec
+                row_str = " ".join([str(val) for val in row if pd.notna(val)])
                 if re.search(re.escape(keyword), row_str, re.IGNORECASE):
                     nums = [parse_number(val) for val in row if parse_number(val) > 0]
                     if nums:
@@ -64,7 +64,7 @@ if item_file and pay_file:
         # Transakcie z výkazu platieb
         transactions = 0.0
         for idx, row in pay_df.iterrows():
-            row_str = " ".join(row.astype(str))
+            row_str = " ".join([str(val) for val in row if pd.notna(val)])
             if 'total' in row_str.lower() or 'spolu' in row_str.lower():
                 nums = [parse_number(val) for val in row if parse_number(val) > 0]
                 if nums:
