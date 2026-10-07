@@ -5,7 +5,7 @@ import io
 
 st.set_page_config(page_title="Radiant KPI Dashboard - Shell ZV2", layout="wide", page_icon="⛽")
 
-st.title("⛽ Radiant KPI & Štatistický Dashboard")
+st.title("⛽ Shell Zvolen 2 - Denný KPI Dashboard")
 st.subheader("Automatické spracovanie denných uzávierok z Radiantu")
 
 col1, col2 = st.columns(2)
@@ -31,30 +31,28 @@ def load_html_tables(uploaded_file):
                 return pd.concat(dfs, ignore_index=True)
         except Exception:
             continue
-    raise ValueError("Nepodarilo sa dešifrovať kódovanie súboru alebo prečítať tabuľky.")
+    raise ValueError("Nepodarilo sa dešifrovať kódovanie súboru.")
 
 if item_file and pay_file:
     try:
         item_df = load_html_tables(item_file)
         pay_df = load_html_tables(pay_file)
 
-        st.success("✅ Súbory z Radiantu boli úspešne načítané!")
-
-        # Funkcia na vyhľadanie reálneho množstva (odfiltruje 8-9 miestne PLU kódy ako 101010101)
+        # Inteligentné vyhľadanie množstva (ignoruje PLU kódy nad 1 000 000)
         def find_item_quantity(keyword):
             for idx, row in item_df.iterrows():
                 row_str = " ".join([str(val) for val in row if pd.notna(val)])
                 if re.search(re.escape(keyword), row_str, re.IGNORECASE):
-                    # Vyberieme len reálne čísla (vynecháme 8-9 miestne ID kódov tovaru)
                     valid_nums = []
                     for val in row:
                         n = parse_number(val)
-                        if 0 < n < 1000000: # Množstvo/litre nebudú v miliónoch
+                        if 0 < n < 1000000:
                             valid_nums.append(n)
                     if valid_nums:
-                        return valid_nums[0] # Prvé menšie číslo býva Množstvo/Litre
+                        return valid_nums[0]
             return 0.0
 
+        # Palivá (Litre)
         fs = find_item_quantity('Natural 95')
         vpr = find_item_quantity('V-Power Racing')
         vp = find_item_quantity('V-Power')
@@ -62,12 +60,13 @@ if item_file and pay_file:
         vpd = find_item_quantity('V-Power Diesel')
         adblue = find_item_quantity('AdBlue')
 
+        # Doplnkový tovar (Kusy)
         coffee = find_item_quantity('Espresso')
         hotdog = find_item_quantity('Hot-Dog') or find_item_quantity('HotDogy')
-        carwash = find_item_quantity('Umytie') or find_item_quantity('Umývacia') or find_item_quantity('CW')
+        carwash = find_item_quantity('Umytie') or find_item_quantity('CW')
         sw_water = find_item_quantity('Smart') or find_item_quantity('WSW')
 
-        # Transakcie z výkazu platieb (hľadáme reálny počet transakcií pod 10 000 ks)
+        # Transakcie z výkazu platieb
         transactions = 0.0
         for idx, row in pay_df.iterrows():
             row_str = " ".join([str(val) for val in row if pd.notna(val)])
@@ -78,49 +77,71 @@ if item_file and pay_file:
                     break
 
         if transactions == 0:
-            transactions = 836.0 # Štandardný denný priemer ak sa nenašlo
+            transactions = 800.0
 
-        # Zobrazenie KPI
+        # Výpočty pre KPI tabuľku
         total_liters = fs + vpr + vp + fsd + vpd
-
-        st.markdown("### 📊 Hlavné Denné Ukazovatele (KPI)")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Celkové Palivá", f"{total_liters:,.2f} L")
-        c2.metric("Počet Transakcií", f"{int(transactions)} ks")
-        c3.metric("Priemerná Čerpaná Dávka", f"{(total_liters / transactions if transactions > 0 else 0):.2f} L / tran.")
-        
         pref_fuels = vpr + vp + vpd
-        pref_pen = (pref_fuels / total_liters * 100) if total_liters > 0 else 0
-        c4.metric("Penetrácia Prémiových Palív", f"{pref_pen:.2f} %")
+        pref_pen = (pref_fuels / total_liters * 100) if total_liters > 0 else 0.0
+
+        conv_coffee = (coffee / transactions * 100) if transactions > 0 else 0.0
+        conv_ff = (hotdog / transactions * 100) if transactions > 0 else 0.0
+        conv_cw = (carwash / transactions * 100) if transactions > 0 else 0.0
+        conv_sw = (sw_water / transactions * 100) if transactions > 0 else 0.0
+
+        st.success("✅ Údaje z Radiantu boli úspešne načítané!")
+
+        # 📊 VAŠA HLAVNÁ KPI TABUĽKA
+        st.markdown("### 📋 Kompletný Denný KPI Prehľad")
+
+        kpi_data = [
+            {"Ukazovateľ / Metrika": "Celkové Palivá (L)", "Skutočnosť": f"{total_liters:,.2f}", "Jednotka": "L"},
+            {"Ukazovateľ / Metrika": "Počet Transakcií", "Skutočnosť": f"{int(transactions)}", "Jednotka": "ks"},
+            {"Ukazovateľ / Metrika": "Priemerná Čerpaná Dávka", "Skutočnosť": f"{(total_liters / transactions if transactions > 0 else 0):.2f}", "Jednotka": "L/tr."},
+            {"Ukazovateľ / Metrika": "Penetrácia Prémiových Palív", "Skutočnosť": f"{pref_pen:.2f}%", "Jednotka": "%"},
+            {"Ukazovateľ / Metrika": "Natural 95", "Skutočnosť": f"{fs:,.2f}", "Jednotka": "L"},
+            {"Ukazovateľ / Metrika": "V-Power 95", "Skutočnosť": f"{vp:,.2f}", "Jednotka": "L"},
+            {"Ukazovateľ / Metrika": "V-Power Racing", "Skutočnosť": f"{vpr:,.2f}", "Jednotka": "L"},
+            {"Ukazovateľ / Metrika": "Diesel", "Skutočnosť": f"{fsd:,.2f}", "Jednotka": "L"},
+            {"Ukazovateľ / Metrika": "V-Power Diesel", "Skutočnosť": f"{vpd:,.2f}", "Jednotka": "L"},
+            {"Ukazovateľ / Metrika": "AdBlue", "Skutočnosť": f"{adblue:,.2f}", "Jednotka": "L"},
+            {"Ukazovateľ / Metrika": "Káva (Shell Café)", "Skutočnosť": f"{int(coffee)} (Konverzia: {conv_coffee:.2f}%)", "Jednotka": "ks"},
+            {"Ukazovateľ / Metrika": "Fast Food / Hot-Dogy", "Skutočnosť": f"{int(hotdog)} (Konverzia: {conv_ff:.2f}%)", "Jednotka": "ks"},
+            {"Ukazovateľ / Metrika": "Umývacia Linka (CW)", "Skutočnosť": f"{int(carwash)} (Konverzia: {conv_cw:.2f}%)", "Jednotka": "ks"},
+            {"Ukazovateľ / Metrika": "Vody do ostrekovačov (SW)", "Skutočnosť": f"{int(sw_water)} (Konverzia: {conv_sw:.2f}%)", "Jednotka": "ks"},
+        ]
+
+        st.table(pd.DataFrame(kpi_data))
 
         st.markdown("---")
-        st.markdown("### 🎯 Konverzné Pomery (Na 100 zákazníkov)")
-        kc1, kc2, kc3, kc4 = st.columns(4)
-        conv_coffee = (coffee / transactions) * 100 if transactions > 0 else 0
-        conv_ff = (hotdog / transactions) * 100 if transactions > 0 else 0
-        conv_cw = (carwash / transactions) * 100 if transactions > 0 else 0
-        conv_sw = (sw_water / transactions) * 100 if transactions > 0 else 0
+        st.markdown("### ✏️ Interaktívny Editor & Export do CSV")
 
-        kc1.metric("☕ Káva (Shell Café)", f"{conv_coffee:.2f} %")
-        kc2.metric("🌭 Fast Food / Hot-Dog", f"{conv_ff:.2f} %")
-        kc3.metric("🚗 Umývacia Linka (CW)", f"{conv_cw:.2f} %")
-        kc4.metric("💧 Vody do ostrekovačov (SW)", f"{conv_sw:.2f} %")
-
-        st.markdown("---")
-        st.markdown("### 🔍 Načítané Hodnoty z Reportu")
-        st.json({
-            "Natural 95 (L)": fs,
-            "V-Power 95 (L)": vp,
-            "V-Power Racing (L)": vpr,
-            "Diesel (L)": fsd,
-            "V-Power Diesel (L)": vpd,
+        df_editor = pd.DataFrame([{
             "AdBlue (L)": adblue,
-            "Káva (ks)": coffee,
-            "HotDog (ks)": hotdog,
-            "Umývarka (ks)": carwash,
-            "Vody SW (ks)": sw_water,
-            "Transakcie (ks)": transactions
-        })
+            "FS Natural (L)": fs,
+            "FSD Diesel (L)": fsd,
+            "VP 95 (L)": vp,
+            "VPD Diesel (L)": vpd,
+            "VPR Racing (L)": vpr,
+            "Transakcie (ks)": int(transactions),
+            "Káva (ks)": int(coffee),
+            "Fast Food (ks)": int(hotdog),
+            "Umývarka (ks)": int(carwash),
+            "Vody SW (ks)": int(sw_water),
+            "Konverzia Káva (%)": f"{conv_coffee:.2f}%",
+            "Konverzia FastFood (%)": f"{conv_ff:.2f}%",
+            "Konverzia Umývarka (%)": f"{conv_cw:.2f}%",
+            "Konverzia Vody SW (%)": f"{conv_sw:.2f}%"
+        }])
+
+        edited_df = st.data_editor(df_editor, num_rows="dynamic", use_container_width=True)
+
+        st.download_button(
+            label="📥 Stiahnuť Aktualizovaný KPI Report (CSV)",
+            data=edited_df.to_csv(index=False).encode('utf-8'),
+            file_name="Shell_ZV2_KPI_Report.csv",
+            mime="text/csv"
+        )
 
     except Exception as e:
         st.error(f"⚠️ Chyba pri spracovaní súborov: {e}")
