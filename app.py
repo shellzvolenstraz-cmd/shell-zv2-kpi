@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import io
 
 st.set_page_config(page_title="Radiant KPI Dashboard - Shell ZV2", layout="wide", page_icon="⛽")
 
@@ -20,26 +21,23 @@ def parse_number(val):
     match = re.search(r"[-+]?\d*\.\d+|\d+", val_str)
     return float(match.group()) if match else 0.0
 
+def load_html_tables(uploaded_file):
+    raw_bytes = uploaded_file.read()
+    # Pokus o načítanie s UTF-16, v prípade neúspechu UTF-8 alebo cp1250
+    for enc in ['utf-16', 'utf-8', 'cp1250', 'iso-8859-2']:
+        try:
+            bytes_io = io.BytesIO(raw_bytes)
+            dfs = pd.read_html(bytes_io, encoding=enc)
+            if dfs:
+                return pd.concat(dfs, ignore_index=True)
+        except Exception:
+            continue
+    raise ValueError("Nepodarilo sa dešifrovať kódovanie súboru.")
+
 if item_file and pay_file:
     try:
-        # Čítanie súborov
-        item_bytes = item_file.read()
-        pay_bytes = pay_file.read()
-
-        # Pokus o načítanie HTML tabuliek pomocou pandas
-        try:
-            item_dfs = pd.read_html(item_bytes, encoding='utf-16')
-        except Exception:
-            item_dfs = pd.read_html(item_bytes, encoding='utf-8')
-
-        try:
-            pay_dfs = pd.read_html(pay_bytes, encoding='utf-16')
-        except Exception:
-            pay_dfs = pd.read_html(pay_bytes, encoding='utf-8')
-
-        # Spojenie všetkých tabuliek z reportu
-        item_df = pd.concat(item_dfs, ignore_index=True)
-        pay_df = pd.concat(pay_dfs, ignore_index=True)
+        item_df = load_html_tables(item_file)
+        pay_df = load_html_tables(pay_file)
 
         st.success("✅ Súbory z Radiantu boli úspešne načítané!")
 
@@ -48,10 +46,9 @@ if item_file and pay_file:
             for idx, row in item_df.iterrows():
                 row_str = " ".join(row.astype(str))
                 if re.search(re.escape(keyword), row_str, re.IGNORECASE):
-                    # Získanie čísel z riadku
                     nums = [parse_number(val) for val in row if parse_number(val) > 0]
                     if nums:
-                        return nums[-1] # Posledné číslo býva suma / množstvo
+                        return nums[-1]
             return 0.0
 
         fs = find_item_qty_or_amount('Natural 95')
@@ -75,7 +72,7 @@ if item_file and pay_file:
                     break
 
         if transactions == 0:
-            transactions = 800.0 # záložná hodnota ak sa nenašla
+            transactions = 800.0
 
         # Zobrazenie KPI
         total_liters = fs + vpr + vp + fsd + vpd
@@ -105,10 +102,7 @@ if item_file and pay_file:
         })
 
     except Exception as e:
-        st.error(f"⚠️ Nepodarilo sa automaticky prečítať štruktúru HTML tabuľky: {e}")
-        st.info("Ukážka surového textu zo súboru pre diagnostiku:")
-        item_text = item_file.read().decode('utf-16', errors='ignore')[:1000]
-        st.text_area("Surový text (prvých 1000 znakov)", item_text, height=200)
+        st.error(f"⚠️ Chyba pri spracovaní súborov: {e}")
 
 else:
     st.info("👆 Nahrajte oba reporty z Radiantu hore vo formulári.")
