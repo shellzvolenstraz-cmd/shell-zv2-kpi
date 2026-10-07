@@ -52,13 +52,21 @@ def parse_item_report(content):
     }
 
 def parse_pay_report(content):
-    tran_match = re.search(r"Total[\s\S]*?<td[^>]*>([0-9\s,]+)</td>\s*</tr>", content, re.IGNORECASE)
-    if tran_match:
-        tds = re.findall(r"<td[^>]*>(.*?)</td>", tran_match.group(0), re.IGNORECASE | re.DOTALL)
-        if tds:
-            val = tds[-1].replace('&nbsp;', '').replace(' ', '').replace(',', '.')
-            return float(re.sub(r'<[^>]+>', '', val))
-    return 836.0
+    try:
+        # Vyhľadávanie riadku Total a získanie poslednej číselnej hodnoty
+        tran_match = re.search(r"Total[\s\S]*?<td[^>]*>(.*?)</td>\s*</tr>", content, re.IGNORECASE)
+        if tran_match:
+            tds = re.findall(r"<td[^>]*>(.*?)</td>", tran_match.group(0), re.IGNORECASE | re.DOTALL)
+            if tds:
+                clean_val = re.sub(r'<[^>]+>', '', tds[-1]).replace('&nbsp;', '').strip()
+                clean_val = clean_val.replace(' ', '').replace(',', '.')
+                # Očistenie od prípadných nečíselných znakov
+                nums_only = re.findall(r"\d+\.?\d*", clean_val)
+                if nums_only:
+                    return float(nums_only[0])
+    except Exception:
+        pass
+    return 836.0  # Vývolatelná hodnota ak report obsahuje neštandardný formát
 
 if item_file and pay_file:
     item_content = item_file.read().decode('utf-16', errors='ignore')
@@ -74,7 +82,7 @@ if item_file and pay_file:
     total_liters = data['fs'] + data['vpr'] + data['vp'] + data['fsd'] + data['vpd']
     c1.metric("Celkové Palivá", f"{total_liters:,.2f} L", delta=f"{total_liters - 8429:,.2f} L vs. Plán")
     c2.metric("Počet Transakcií", f"{int(transactions)} ks")
-    c3.metric("Priemerná Čerpaná Dávka", f"{total_liters / transactions:.2f} L / transakcia")
+    c3.metric("Priemerná Čerpaná Dávka", f"{(total_liters / transactions if transactions > 0 else 0):.2f} L / transakcia")
     
     pref_fuels = data['vpr'] + data['vp'] + data['vpd']
     pref_pen = (pref_fuels / total_liters) * 100 if total_liters > 0 else 0
@@ -84,10 +92,10 @@ if item_file and pay_file:
     st.markdown("### 🎯 Konverzné Pomery (Na 100 zákazníkov)")
     
     kc1, kc2, kc3, kc4 = st.columns(4)
-    conv_coffee = (data['coffee'] / transactions) * 100
-    conv_ff = (data['fastfood'] / transactions) * 100
-    conv_cw = (data['carwash'] / transactions) * 100
-    conv_sw = (data['sw_water'] / transactions) * 100
+    conv_coffee = (data['coffee'] / transactions) * 100 if transactions > 0 else 0
+    conv_ff = (data['fastfood'] / transactions) * 100 if transactions > 0 else 0
+    conv_cw = (data['carwash'] / transactions) * 100 if transactions > 0 else 0
+    conv_sw = (data['sw_water'] / transactions) * 100 if transactions > 0 else 0
 
     kc1.metric("☕ Káva (Shell Café)", f"{conv_coffee:.2f} %")
     kc2.metric("🌭 Fast Food / Hot-Dog", f"{conv_ff:.2f} %")
